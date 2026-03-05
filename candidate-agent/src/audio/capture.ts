@@ -1,22 +1,40 @@
-import { spawn, ChildProcess } from "child_process";
+import { spawn, execSync, ChildProcess } from "child_process";
 import { Readable } from "stream";
 
 let soxProcess: ChildProcess | null = null;
 
 /**
+ * Gets the monitor source for the current default output sink.
+ * This captures all audio playing through the system (meeting audio)
+ * without changing the system's default source setting.
+ */
+function getOutputMonitorSource(): string {
+    try {
+        const defaultSink = execSync("pactl get-default-sink", { encoding: "utf-8" }).trim();
+        const monitor = `${defaultSink}.monitor`;
+        console.log(`[audio] Capturing from: ${monitor}`);
+        return monitor;
+    } catch {
+        console.warn("[audio] Could not detect default sink, falling back to 'default'");
+        return "default";
+    }
+}
+
+/**
  * Starts capturing system audio via SoX + PulseAudio.
  * Returns a readable stream of raw PCM16 audio (16kHz, mono, signed 16-bit LE).
  *
- * Captures from the PulseAudio default monitor source, which picks up
+ * Captures from the default output sink's monitor (loopback), which picks up
  * all audio playing through the system (i.e., the Teams meeting audio).
  */
 export function startAudioCapture(): Readable {
     const isLinux = process.platform === "linux";
+    const source = isLinux ? getOutputMonitorSource() : undefined;
 
     const args = isLinux
         ? [
               "-t", "pulseaudio",
-              "default",
+              source!,
               "-t", "raw",
               "-r", "16000",
               "-c", "1",

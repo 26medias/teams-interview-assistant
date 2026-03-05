@@ -1,32 +1,49 @@
-import { spawn, ChildProcess } from "child_process";
+import { spawn, execSync, ChildProcess } from "child_process";
 import { Readable } from "stream";
 
 let soxProcess: ChildProcess | null = null;
 
 /**
+ * Gets the monitor source for the current default output sink.
+ * This captures all audio playing through the system (meeting audio)
+ * without changing the system's default source setting.
+ */
+function getOutputMonitorSource(): string {
+    try {
+        const defaultSink = execSync("pactl get-default-sink", { encoding: "utf-8" }).trim();
+        const monitor = `${defaultSink}.monitor`;
+        console.log(`[audio] Capturing from: ${monitor}`);
+        return monitor;
+    } catch {
+        console.warn("[audio] Could not detect default sink, falling back to 'default'");
+        return "default";
+    }
+}
+
+/**
  * Starts capturing system audio via SoX.
  * Returns a readable stream of raw PCM16 audio (16kHz, mono, signed 16-bit LE).
  *
- * On Linux (PulseAudio/PipeWire): captures from the default monitor source.
+ * On Linux: captures from the default output sink's monitor (loopback).
  * On macOS: captures from the default input device.
  */
 export function startAudioCapture(): Readable {
     const isLinux = process.platform === "linux";
+    const source = isLinux ? getOutputMonitorSource() : undefined;
 
-    // SoX args: input → output as raw PCM16 at 16kHz mono
     const args = isLinux
         ? [
               "-t", "pulseaudio",
-              "default",        // source — use `pactl list short sources` to find monitor sources
+              source!,
               "-t", "raw",
               "-r", "16000",
               "-c", "1",
               "-e", "signed-integer",
               "-b", "16",
-              "-",              // output to stdout
+              "-",
           ]
         : [
-              "-d",             // default input device on macOS
+              "-d",
               "-t", "raw",
               "-r", "16000",
               "-c", "1",
@@ -42,7 +59,6 @@ export function startAudioCapture(): Readable {
 
     proc.stderr!.on("data", (data: Buffer) => {
         const msg = data.toString().trim();
-        // SoX prints info to stderr — only log actual errors
         if (msg.toLowerCase().includes("error") || msg.toLowerCase().includes("fail")) {
             console.error(`[audio] SoX error: ${msg}`);
         }
@@ -51,7 +67,7 @@ export function startAudioCapture(): Readable {
     proc.on("error", (err) => {
         if ((err as NodeJS.ErrnoException).code === "ENOENT") {
             console.error("[audio] SoX is not installed. Install it:");
-            console.error("  Linux:  sudo apt install sox libsox-fmt-pulseaudio");
+            console.error("  Linux:  sudo apt install sox libsox-fmt-pulse");
             console.error("  macOS:  brew install sox");
             process.exit(1);
         }
