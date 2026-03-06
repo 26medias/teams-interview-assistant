@@ -143,6 +143,38 @@ docker run -d --name interview-milvus -p 19530:19530 milvusdb/milvus:latest milv
 cd backend && npm run migrate
 ```
 
+## Specs Compliance
+
+The authoritative feature spec is `docs/specs/specs.md`. Always check it before making UI or feature changes. Key requirements:
+
+### Frontend Views (from spec)
+- **Create Interview**: Candidate name, Teams meeting link, resume upload, JD upload/select existing, hiring criteria upload/select existing, stage details text/select from past
+- **Upcoming (interview detail)**:
+    - [Join meeting] + [Update meeting link]
+    - List of generated questions with delete/manual edit/AI edit (feedback → new version)
+    - [Generate more questions] with focus area prompt
+    - Candidate summary (rich markdown profile from resume + job context)
+- **In Progress (interview detail)**:
+    - Candidate summary (collapsible, collapsed by default to save screen space)
+    - Real-time transcript (polling)
+    - Next questions & follow-up suggestions (SSE, 5 at a time) with "More" button
+    - List of all generated questions (collapsible)
+- **Completed (interview detail)**:
+    - Full transcript (collapsible)
+    - Report: summary, pros, cons, rating, recommendation
+    - Export to markdown
+    - [New Interview] button to reuse candidate + documents for a new round
+
+### Candidate Agent (from spec)
+- Emotion tags in LLM prompt: `[nervous]`, `[excited]`, `[laughs]`, `[sighs]`, etc.
+- ElevenLabs TTS with `voice_settings` (low stability, high style) to make emotion tags expressive
+- Caption scraping uses `.fui-ChatMessageCompact` → `[data-tid="author"]` + `[data-tid="closed-caption-text"]` + `.fui-Avatar` ID tracking
+- Self-speech filtering by candidateName + reset() on speak→listen transition
+
+### Meeting Bot (from spec)
+- Same caption scraping approach as candidate-agent (correct DOM selectors, per-entry tracking)
+- POSTs transcript segments to backend, which triggers suggestion generation via SSE
+
 ## Code Conventions
 
 - 1 tab = 4 spaces

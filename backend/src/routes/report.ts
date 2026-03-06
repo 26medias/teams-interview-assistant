@@ -10,10 +10,10 @@ router.use(requireAuth);
 router.get("/:interviewId/report", async (req: Request, res: Response) => {
     const report = await getReport(param(req, "interviewId"));
     if (!report) {
-        res.status(404).json({ error: "Report not found — it may still be generating" });
+        res.json({ status: "generating" });
         return;
     }
-    res.json(report);
+    res.json({ status: "ready", ...report });
 });
 
 router.get("/:interviewId/report/markdown", async (req: Request, res: Response) => {

@@ -1,6 +1,6 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { post, upload } from "../api/client.ts";
+import { get, post, upload } from "../api/client.ts";
 import { FileUpload } from "../components/FileUpload.tsx";
 import { DocumentPicker } from "../components/DocumentPicker.tsx";
 import type { Interview } from "../types.ts";
@@ -29,8 +29,16 @@ export function CreateInterviewPage() {
     const [hcFile, setHcFile] = useState<File | null>(null);
     const [hcDocId, setHcDocId] = useState<string | null>(null);
 
+    const [pastStageDetails, setPastStageDetails] = useState<string[]>([]);
+
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        get<string[]>("/api/interviews/meta/stage-details")
+            .then(setPastStageDetails)
+            .catch(() => {});
+    }, []);
 
     async function handleSubmit(e: FormEvent) {
         e.preventDefault();
@@ -89,10 +97,7 @@ export function CreateInterviewPage() {
 
             await Promise.all(docOps);
 
-            // 3. Trigger question generation
-            await post(`/api/interviews/${interview.id}/questions/generate`);
-
-            // 4. Navigate to detail
+            // 3. Navigate immediately — questions generate in background on the profile page
             navigate(`/interviews/${interview.id}`);
         } catch (err) {
             setError(err instanceof Error ? err.message : "Failed to create interview");
@@ -219,6 +224,24 @@ export function CreateInterviewPage() {
                     <label className="mb-1 block text-sm font-medium text-gray-700">
                         Stage Details
                     </label>
+                    {pastStageDetails.length > 0 && (
+                        <select
+                            value=""
+                            onChange={(e) => {
+                                if (e.target.value) {
+                                    setStageDetails(e.target.value);
+                                }
+                            }}
+                            className="mb-2 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                        >
+                            <option value="">Select from past interviews...</option>
+                            {pastStageDetails.map((detail) => (
+                                <option key={detail} value={detail}>
+                                    {detail}
+                                </option>
+                            ))}
+                        </select>
+                    )}
                     <textarea
                         value={stageDetails}
                         onChange={(e) => setStageDetails(e.target.value)}

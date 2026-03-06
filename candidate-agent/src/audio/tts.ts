@@ -46,6 +46,12 @@ class ElevenLabsTTS implements TTSService {
             body: JSON.stringify({
                 text,
                 model_id: "eleven_v3",
+                voice_settings: {
+                    stability: 0.3,
+                    similarity_boost: 0.75,
+                    style: 0.7,
+                    use_speaker_boost: true,
+                },
             }),
         });
 

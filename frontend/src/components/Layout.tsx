@@ -1,4 +1,4 @@
-import { Navigate, Outlet } from "react-router-dom";
+import { Navigate, Outlet, Link } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext.tsx";
 
 export function Layout() {
@@ -20,9 +20,9 @@ export function Layout() {
         <div className="min-h-screen bg-gray-50">
             <nav className="border-b border-gray-200 bg-white">
                 <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
-                    <h1 className="text-lg font-semibold text-gray-900">
+                    <Link to="/" className="text-lg font-semibold text-gray-900 hover:text-indigo-600">
                         Interview Assistant
-                    </h1>
+                    </Link>
                     <div className="flex items-center gap-4">
                         <span className="text-sm text-gray-600">{user.name}</span>
                         <button

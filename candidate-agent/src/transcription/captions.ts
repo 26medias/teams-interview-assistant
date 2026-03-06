@@ -12,9 +12,24 @@ export interface CaptionEvents {
     on(event: "error", listener: (err: Error) => void): this;
 }
 
+interface TrackedEntry {
+    id: string;
+    speaker: string;
+    text: string;
+    lastChanged: number;
+    emitted: boolean;
+}
+
 /**
  * Enables Teams live captions and scrapes them from the DOM.
- * Emits "utterance-end" when a speaker's caption block stops updating.
+ *
+ * Teams renders captions as a list of fui-ChatMessageCompact entries.
+ * Each entry has a unique avatar ID, a speaker name (data-tid="author"),
+ * and caption text (data-tid="closed-caption-text") that updates live
+ * as the person speaks. New entries appear when the speaker pauses or changes.
+ *
+ * We track each entry by its avatar ID, filter out the candidate's own speech,
+ * and emit "utterance-end" when an entry's text stops changing.
  */
 export async function startCaptionScraping(
     page: Page,
@@ -27,98 +42,140 @@ export async function startCaptionScraping(
 }> {
     const emitter = new EventEmitter() as EventEmitter & CaptionEvents;
 
-    // Enable live captions via the "More" menu
     await enableCaptions(page);
 
-    let lastSpeaker = "";
-    let lastText = "";
-    let ignoredText = ""; // Text to ignore (snapshot from after agent speaks)
-    let silenceTimer: ReturnType<typeof setTimeout> | null = null;
-    const UTTERANCE_END_MS = 2000;
+    // Track each caption entry by its avatar ID
+    const entries = new Map<string, TrackedEntry>();
+    const FINALIZE_MS = 2500;
     let stopped = false;
 
-    // Poll the captions container for new text
+    function isSelf(speaker: string): boolean {
+        if (speaker === "Unknown") return false;
+        const speakerLower = speaker.toLowerCase();
+        const nameLower = candidateName.toLowerCase();
+        return speakerLower.includes(nameLower) || nameLower.includes(speakerLower);
+    }
+
+    function emitEntry(entry: TrackedEntry) {
+        if (entry.emitted || !entry.text.trim()) return;
+        entry.emitted = true;
+        // Skip the candidate's own speech
+        if (isSelf(entry.speaker)) return;
+        if (verbose) {
+            console.log(`[captions] [${entry.speaker}] "${entry.text}"`);
+        }
+        emitter.emit("utterance-end", entry.speaker, entry.text);
+    }
+
+    // Check for finalized entries periodically
+    const finalizeInterval = setInterval(() => {
+        if (stopped) return;
+        const now = Date.now();
+        for (const entry of entries.values()) {
+            if (!entry.emitted && now - entry.lastChanged > FINALIZE_MS) {
+                emitEntry(entry);
+            }
+        }
+    }, 500);
+
+    // Poll the captions DOM
     const pollInterval = setInterval(async () => {
         if (stopped) return;
 
         try {
-            const caption = await readCaption(page);
-            if (!caption || !caption.text) return;
+            const currentEntries = await readAllCaptions(page);
+            if (!currentEntries || currentEntries.length === 0) return;
 
-            // Skip the candidate's own speech (when Teams exposes speaker names)
-            if (caption.speaker !== "Unknown") {
-                const speakerLower = caption.speaker.toLowerCase();
-                const nameLower = candidateName.toLowerCase();
-                if (speakerLower.includes(nameLower) || nameLower.includes(speakerLower)) {
-                    return;
-                }
-            }
+            const currentIds = new Set<string>();
 
-            // Skip text that matches the post-speaking snapshot
-            if (ignoredText && caption.text === ignoredText) return;
-            // Once we see new text, clear the ignore marker
-            if (ignoredText && caption.text !== ignoredText) {
-                ignoredText = "";
-            }
+            for (const raw of currentEntries) {
+                currentIds.add(raw.id);
 
-            const textChanged = caption.text !== lastText;
-            const speakerChanged = caption.speaker !== lastSpeaker;
-
-            if (speakerChanged && lastSpeaker && lastText) {
-                if (silenceTimer) {
-                    clearTimeout(silenceTimer);
-                    silenceTimer = null;
-                }
-                emitter.emit("utterance-end", lastSpeaker, lastText);
-            }
-
-            if (textChanged || speakerChanged) {
-                lastSpeaker = caption.speaker;
-                lastText = caption.text;
-
-                emitter.emit("caption", { speaker: caption.speaker, text: caption.text });
-
-                if (silenceTimer) clearTimeout(silenceTimer);
-                silenceTimer = setTimeout(() => {
-                    if (lastText && lastSpeaker) {
-                        if (verbose) {
-                            console.log(`[captions] "${lastText}"`);
+                const existing = entries.get(raw.id);
+                if (existing) {
+                    // Entry exists — check if text changed
+                    if (raw.text !== existing.text) {
+                        existing.text = raw.text;
+                        existing.speaker = raw.speaker;
+                        existing.lastChanged = Date.now();
+                        if (existing.emitted) {
+                            existing.emitted = false; // Re-arm: text grew
                         }
-                        emitter.emit("utterance-end", lastSpeaker, lastText);
-                        lastSpeaker = "";
-                        lastText = "";
                     }
-                }, UTTERANCE_END_MS);
+                } else {
+                    // New entry appeared — finalize all previous un-emitted entries
+                    for (const prev of entries.values()) {
+                        if (!prev.emitted) {
+                            emitEntry(prev);
+                        }
+                    }
+
+                    entries.set(raw.id, {
+                        id: raw.id,
+                        speaker: raw.speaker,
+                        text: raw.text,
+                        lastChanged: Date.now(),
+                        emitted: false,
+                    });
+                }
+
+                // Emit live caption updates (for non-self speakers)
+                if (!isSelf(raw.speaker)) {
+                    emitter.emit("caption", { speaker: raw.speaker, text: raw.text });
+                }
+            }
+
+            // Clean up entries that are no longer in the DOM (scrolled out)
+            for (const [id, entry] of entries) {
+                if (!currentIds.has(id)) {
+                    if (!entry.emitted) {
+                        emitEntry(entry);
+                    }
+                    entries.delete(id);
+                }
             }
         } catch {
-            // Page might have navigated or closed — ignore transient errors
+            // Page might have navigated or closed
         }
     }, 500);
 
     function stop() {
         stopped = true;
         clearInterval(pollInterval);
-        if (silenceTimer) clearTimeout(silenceTimer);
+        clearInterval(finalizeInterval);
+        for (const entry of entries.values()) {
+            if (!entry.emitted) emitEntry(entry);
+        }
     }
 
     /**
-     * Reset caption tracking. Snapshots whatever's currently in the DOM
-     * so the agent's own speech gets ignored when resuming listening.
+     * Reset caption tracking. Marks all current entries as emitted so the
+     * agent's own speech (and any residual captions) are ignored when
+     * resuming listening.
      */
     async function reset() {
-        if (silenceTimer) {
-            clearTimeout(silenceTimer);
-            silenceTimer = null;
+        // Mark all tracked entries as emitted
+        for (const entry of entries.values()) {
+            entry.emitted = true;
         }
-        lastSpeaker = "";
-        lastText = "";
 
-        // Snapshot current caption text so we skip it
+        // Also snapshot current DOM entries and mark them as emitted,
+        // in case new entries appeared since the last poll
         try {
-            const current = await readCaption(page);
-            ignoredText = current?.text || "";
+            const currentEntries = await readAllCaptions(page);
+            for (const raw of currentEntries) {
+                if (!entries.has(raw.id)) {
+                    entries.set(raw.id, {
+                        id: raw.id,
+                        speaker: raw.speaker,
+                        text: raw.text,
+                        lastChanged: Date.now(),
+                        emitted: true,
+                    });
+                }
+            }
         } catch {
-            ignoredText = "";
+            // Best effort
         }
     }
 
@@ -126,36 +183,29 @@ export async function startCaptionScraping(
 }
 
 /**
- * Reads the current caption text + speaker from the Teams DOM.
+ * Reads ALL current caption entries from the Teams DOM.
+ * Each entry has a unique ID (from the avatar), speaker name, and text.
  */
-async function readCaption(page: Page): Promise<{ speaker: string; text: string } | null> {
+async function readAllCaptions(page: Page): Promise<Array<{ id: string; speaker: string; text: string }>> {
     return page.evaluate(() => {
-        // Primary selector for Teams caption text
-        const captionElements = document.querySelectorAll('[data-tid="closed-caption-text"]');
-        if (captionElements.length > 0) {
-            const lastCaption = captionElements[captionElements.length - 1];
-            const text = lastCaption.textContent?.trim() || "";
-            const container = lastCaption.closest('[data-tid="closed-caption-container"]') || lastCaption.parentElement;
-            const speakerEl = container?.querySelector('[data-tid="closed-caption-speaker-name"]');
-            const speaker = speakerEl?.textContent?.trim() || "Unknown";
-            return { speaker, text };
+        const results: Array<{ id: string; speaker: string; text: string }> = [];
+
+        // Each caption entry is a fui-ChatMessageCompact
+        const entries = document.querySelectorAll('.fui-ChatMessageCompact');
+        for (const entry of entries) {
+            const text = entry.querySelector('[data-tid="closed-caption-text"]')?.textContent?.trim();
+            if (!text) continue;
+
+            const speaker = entry.querySelector('[data-tid="author"]')?.textContent?.trim() || "Unknown";
+
+            // Use the avatar ID as a unique identifier for this entry
+            const avatarEl = entry.querySelector('.fui-Avatar');
+            const id = avatarEl?.id || `entry-${results.length}`;
+
+            results.push({ id, speaker, text });
         }
 
-        // Fallback selectors for different Teams versions
-        const altCaptions = document.querySelectorAll('.ui-chat__message, [class*="caption" i], [class*="subtitle" i]');
-        for (const el of altCaptions) {
-            const text = el.textContent?.trim();
-            if (text && text.length > 0) {
-                const parent = el.closest('[class*="caption" i]') || el.parentElement;
-                const speakerEl = parent?.querySelector('[class*="name" i], [class*="speaker" i]');
-                return {
-                    speaker: speakerEl?.textContent?.trim() || "Unknown",
-                    text,
-                };
-            }
-        }
-
-        return null;
+        return results;
     });
 }
 
@@ -194,7 +244,9 @@ async function enableCaptions(page: Page): Promise<void> {
                 await captionsToggle.click();
                 console.log("[captions] Live captions enabled");
             } else {
-                console.warn("[captions] Could not find captions option — enable manually: More (...) > Turn on live captions");
+                console.warn(
+                    "[captions] Could not find captions option — enable manually: More (...) > Turn on live captions"
+                );
             }
         }
 

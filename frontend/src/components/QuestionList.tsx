@@ -2,10 +2,12 @@ import { useState } from "react";
 import type { Question } from "../types.ts";
 
 const CATEGORY_COLORS: Record<string, string> = {
+    intro: "bg-gray-100 text-gray-700",
     technical: "bg-blue-100 text-blue-800",
     behavioral: "bg-green-100 text-green-800",
     situational: "bg-yellow-100 text-yellow-800",
-    "follow-up": "bg-purple-100 text-purple-800",
+    "deep-dive": "bg-purple-100 text-purple-800",
+    "follow-up": "bg-orange-100 text-orange-800",
 };
 
 interface QuestionListProps {

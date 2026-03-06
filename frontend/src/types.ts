@@ -38,6 +38,13 @@ export interface TranscriptSegment {
     timestamp: string;
 }
 
+export interface CriteriaItem {
+    id: string;
+    text: string;
+    status: "todo" | "in_progress" | "pass" | "fail";
+    evidence: string | null;
+}
+
 export interface Report {
     summary: string;
     pros: string[];

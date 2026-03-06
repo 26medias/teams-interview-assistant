@@ -5,6 +5,9 @@ import * as interviewService from "../services/interview.js";
 import { startBot, stopBot } from "../services/bot-manager.js";
 import { setInterviewStatus } from "../services/interview.js";
 import { generateReport } from "../services/report.js";
+import { getCandidateSummary } from "../services/candidate-summary.js";
+import { getCriteria } from "../services/criteria-tracker.js";
+import { db } from "../db/postgres.js";
 
 const router = Router();
 
@@ -27,6 +30,22 @@ router.post("/", requireAuth, async (req: Request, res: Response) => {
     } catch (err: any) {
         res.status(400).json({ error: err.message });
     }
+});
+
+// Must be before /:id to avoid "meta" being treated as an ID
+router.get("/meta/stage-details", requireAuth, async (req: Request, res: Response) => {
+    const result = await db.query(
+        `SELECT DISTINCT stage_details FROM interviews
+         WHERE user_id = $1 AND stage_details IS NOT NULL AND stage_details != ''
+         ORDER BY stage_details`,
+        [req.auth!.userId],
+    );
+    res.json(result.rows.map((r: any) => r.stage_details));
+});
+
+router.get("/:id/criteria", requireAuth, async (req: Request, res: Response) => {
+    const criteria = await getCriteria(param(req, "id"));
+    res.json(criteria);
 });
 
 router.get("/:id", requireAuth, async (req: Request, res: Response) => {
@@ -82,6 +101,15 @@ router.post("/:id/leave", requireAuth, async (req: Request, res: Response) => {
     });
 
     res.json(updated);
+});
+
+router.get("/:id/summary", requireAuth, async (req: Request, res: Response) => {
+    const summary = await getCandidateSummary(param(req, "id"));
+    if (!summary) {
+        res.status(404).json({ error: "No resume available to generate summary" });
+        return;
+    }
+    res.json({ summary });
 });
 
 export default router;

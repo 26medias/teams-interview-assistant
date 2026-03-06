@@ -3,6 +3,7 @@ import { config } from "../config.js";
 import { db } from "../db/postgres.js";
 import { searchRelevantQuestions } from "./embedding.js";
 import { getInterviewDocuments } from "./document.js";
+import { evaluateCriteria } from "./criteria-tracker.js";
 
 const client = new GoogleGenAI({ apiKey: config.geminiApiKey });
 
@@ -26,8 +27,18 @@ export async function addSseClient(interviewId: string, res: any): Promise<() =>
             [interviewId],
         );
         if (questions.rows.length > 0) {
+            // Check if interview is past intro phase
+            const transcriptCount = await db.query(
+                "SELECT COUNT(*) as cnt FROM transcript_segments WHERE interview_id = $1",
+                [interviewId],
+            );
+            const pastIntro = parseInt(transcriptCount.rows[0].cnt) >= 6;
+            let initial = questions.rows;
+            if (pastIntro) {
+                initial = initial.filter((q: any) => q.category !== "intro");
+            }
             const payload = `data: ${JSON.stringify({
-                prepared: questions.rows.slice(0, 5).map((q: any) => ({
+                prepared: initial.slice(0, 5).map((q: any) => ({
                     id: q.id,
                     text: q.text,
                     category: q.category,
@@ -90,12 +101,17 @@ export async function onNewTranscript(interviewId: string): Promise<void> {
             [interviewId],
         );
 
-        const uncovered = allQuestions.rows.filter((q: any) => {
+        let uncovered = allQuestions.rows.filter((q: any) => {
             const keywords = q.text.toLowerCase().split(/\s+/).filter((w: string) => w.length > 5);
             if (keywords.length === 0) return true;
             const coveredCount = keywords.filter((w: string) => fullText.includes(w)).length;
-            return coveredCount < keywords.length * 0.5;
+            return coveredCount < keywords.length * 0.4;
         });
+
+        // After the intro phase (6+ segments), stop suggesting intro questions
+        if (fullTranscript.rows.length >= 6) {
+            uncovered = uncovered.filter((q: any) => q.category !== "intro");
+        }
 
         // Use Milvus RAG to rank uncovered questions by relevance to current conversation
         let ranked = uncovered;
@@ -124,6 +140,11 @@ export async function onNewTranscript(interviewId: string): Promise<void> {
                 id: `followup-${Date.now()}-${i}`,
                 text,
             })),
+        });
+
+        // Trigger debounced criteria evaluation in background
+        evaluateCriteria(interviewId).catch((err) => {
+            console.error("[criteria] Background evaluation failed:", err);
         });
     } catch (err) {
         console.error("[suggestion] Error generating suggestions:", err);
@@ -172,6 +193,6 @@ Output one question per line, no numbering, no prefixes.`;
     const text = response.text ?? "";
     return text
         .split("\n")
-        .map((l) => l.trim())
-        .filter((l) => l.length > 10 && l.endsWith("?"));
+        .map((l) => l.replace(/^\d+[\.\)]\s*/, "").replace(/^[-•*]\s*/, "").trim())
+        .filter((l) => l.length > 15);
 }
