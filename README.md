@@ -1,6 +1,17 @@
 # Teams Interview Assistant
 
-AI-powered interview assistant for Microsoft Teams. Upload a candidate's resume, hiring criteria, and job description, then the assistant joins a Teams call to provide real-time question suggestions and follow-ups. After the call, it generates a full evaluation report.
+AI-powered interview assistant for Microsoft Teams that helps interviewers run structured, thorough interviews. Upload a candidate's resume, hiring criteria, and job description ahead of time — the system generates targeted questions, then joins the live call to suggest the best next question and follow-ups in real time. When the interview ends, it produces a complete evaluation report.
+
+## Features
+
+- **Document-driven question generation** — upload a resume, job description, and hiring criteria; the AI generates questions that cover every criterion and probe the candidate's specific background
+- **Reusable documents** — job descriptions, hiring criteria, and stage details can be reused across interviews without re-uploading
+- **Question management** — review, edit, delete, or AI-refine generated questions before the interview; generate more with a custom focus area
+- **Candidate summary** — rich markdown profile synthesized from the resume and job context, visible before and during the interview
+- **One-click meeting join** — the bot joins your Teams call as "Meeting Transcript Recorder" and captures live captions (no audio recording, no mic, no camera)
+- **Real-time suggestions** — during the call, the system ranks pre-generated questions by relevance to the conversation (vector search) and generates follow-up questions on the fly, streamed via SSE
+- **Post-interview report** — automatic evaluation with summary, strengths, concerns, 1-5 rating, and recommended next steps; exportable to markdown
+- **Multi-round support** — start a new interview for the same candidate, carrying over documents from a previous round
 
 ## Architecture
 
