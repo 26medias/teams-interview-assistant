@@ -59,7 +59,7 @@ router.patch("/questions/:questionId", async (req: Request, res: Response) => {
 
         const response = await genai.models.generateContent({
             model: "gemini-2.5-flash",
-            config: { maxOutputTokens: 256 },
+            config: {},
             contents: [{
                 role: "user",
                 parts: [{ text: `Rewrite this interview question based on the feedback. Output ONLY the new question, nothing else.

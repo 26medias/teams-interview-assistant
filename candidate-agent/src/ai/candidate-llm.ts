@@ -35,7 +35,6 @@ export async function generateResponse(
         model: "gemini-2.5-flash",
         config: {
             systemInstruction: systemPrompt,
-            maxOutputTokens: 1024,
         },
         contents,
     });

@@ -7,7 +7,7 @@ const client = new GoogleGenAI({ apiKey: config.geminiApiKey });
 
 // Debounce: only evaluate every 30s per interview
 const lastEvalTime = new Map<string, number>();
-const EVAL_INTERVAL_MS = 30_000;
+const EVAL_INTERVAL_MS = 20_000;
 
 export interface CriteriaItem {
     id: string;
@@ -73,7 +73,7 @@ Output 5-15 items. Focus on what matters most for this role and stage.`;
 
     const response = await client.models.generateContent({
         model: "gemini-2.5-flash",
-        config: { maxOutputTokens: 1024 },
+        config: {},
         contents: [{ role: "user", parts: [{ text: prompt }] }],
     });
 
@@ -122,24 +122,26 @@ export async function evaluateCriteria(interviewId: string): Promise<void> {
         .map((c: any, i: number) => `${i + 1}. ${c.text} [current: ${c.status}]`)
         .join("\n");
 
-    const prompt = `You are evaluating a job interview in progress. Based on the transcript so far, update the status of each hiring criterion.
+    const prompt = `You are evaluating a job interview in progress. Based on the FULL transcript so far, update the status of each hiring criterion.
 
 CRITERIA:
 ${criteriaList}
 
-TRANSCRIPT:
-${transcriptText.slice(-5000)}
+TRANSCRIPT (most recent conversation):
+${transcriptText.slice(-8000)}
 
 For each criterion, output a line in this exact format:
 NUMBER|STATUS|EVIDENCE
 
 Where STATUS is one of: todo, in_progress, pass, fail
-- todo: not discussed yet
-- in_progress: being discussed or partially covered
-- pass: candidate demonstrated clear competency
-- fail: candidate showed weakness or could not answer
+- todo: not mentioned or discussed AT ALL in the transcript
+- in_progress: the topic was brought up, the candidate mentioned it, or it's being discussed but without enough depth or concrete examples yet. Be GENEROUS with marking things as in_progress — if the candidate even tangentially mentions a related concept, skill, or experience, mark it in_progress.
+- pass: candidate demonstrated clear competency with specific examples, metrics, or detailed explanations
+- fail: candidate was directly asked about this and showed weakness, confusion, or could not answer
 
-EVIDENCE should be a brief (1 sentence) note about what was said, or empty if todo.
+IMPORTANT: Read the transcript carefully. A criterion about "prompt architecture" should be marked in_progress if the candidate discusses prompting, prompt engineering, prompt design, LLM prompts, or any related concept — even if they don't use the exact phrase "prompt architecture". Look for SEMANTIC matches, not just exact keyword matches.
+
+EVIDENCE should be a brief (1 sentence) quote or paraphrase of what was said, or empty if todo.
 
 Example:
 1|pass|Candidate described building distributed systems at scale with concrete metrics
@@ -152,7 +154,7 @@ Output exactly ${criteria.rows.length} lines, one per criterion.`;
     try {
         const response = await client.models.generateContent({
             model: "gemini-2.5-flash",
-            config: { maxOutputTokens: 1024 },
+            config: {},
             contents: [{ role: "user", parts: [{ text: prompt }] }],
         });
 

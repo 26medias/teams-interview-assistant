@@ -11,9 +11,11 @@ const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string }>
 
 interface CriteriaChecklistProps {
     interviewId: string;
+    selectedCriterion?: string | null;
+    onSelectCriterion?: (text: string | null) => void;
 }
 
-export function CriteriaChecklist({ interviewId }: CriteriaChecklistProps) {
+export function CriteriaChecklist({ interviewId, selectedCriterion, onSelectCriterion }: CriteriaChecklistProps) {
     const [criteria, setCriteria] = useState<CriteriaItem[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -90,8 +92,17 @@ export function CriteriaChecklist({ interviewId }: CriteriaChecklistProps) {
                 <ul className="space-y-2">
                     {criteria.map((item) => {
                         const cfg = STATUS_CONFIG[item.status] || STATUS_CONFIG.todo;
+                        const isSelected = selectedCriterion === item.text;
                         return (
-                            <li key={item.id} className="rounded-md border border-gray-200 p-2.5">
+                            <li
+                                key={item.id}
+                                onClick={() => onSelectCriterion?.(isSelected ? null : item.text)}
+                                className={`cursor-pointer rounded-md border p-2.5 transition-colors ${
+                                    isSelected
+                                        ? "border-indigo-400 bg-indigo-50 ring-1 ring-indigo-300"
+                                        : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                                }`}
+                            >
                                 <div className="flex items-start justify-between gap-2">
                                     <span className="text-sm text-gray-800">{item.text}</span>
                                     <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${cfg.bg} ${cfg.text}`}>

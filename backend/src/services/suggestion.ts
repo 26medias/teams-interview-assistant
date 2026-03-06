@@ -186,7 +186,7 @@ Output one question per line, no numbering, no prefixes.`;
 
     const response = await client.models.generateContent({
         model: "gemini-2.5-flash",
-        config: { maxOutputTokens: 512 },
+        config: {},
         contents: [{ role: "user", parts: [{ text: prompt }] }],
     });
 

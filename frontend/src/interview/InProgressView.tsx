@@ -29,6 +29,7 @@ export function InProgressView({ interview, onStatusChange }: InProgressViewProp
     const [questionsOpen, setQuestionsOpen] = useState(false);
     const [questionsTab, setQuestionsTab] = useState("all");
     const [summaryOpen, setSummaryOpen] = useState(false);
+    const [selectedCriterion, setSelectedCriterion] = useState<string | null>(null);
 
     // Fetch all pre-generated questions once
     useEffect(() => {
@@ -123,10 +124,14 @@ export function InProgressView({ interview, onStatusChange }: InProgressViewProp
                 {/* Right: Suggestions + Criteria (40%) */}
                 <div className="flex w-2/5 flex-col gap-4">
                     <div className="flex min-h-0 flex-1 flex-col rounded-lg bg-white shadow-sm">
-                        <SuggestionsPanel interviewId={interview.id} />
+                        <SuggestionsPanel interviewId={interview.id} criteriaFilter={selectedCriterion} />
                     </div>
                     <div className="flex h-56 shrink-0 flex-col rounded-lg bg-white shadow-sm">
-                        <CriteriaChecklist interviewId={interview.id} />
+                        <CriteriaChecklist
+                            interviewId={interview.id}
+                            selectedCriterion={selectedCriterion}
+                            onSelectCriterion={setSelectedCriterion}
+                        />
                     </div>
                 </div>
             </div>

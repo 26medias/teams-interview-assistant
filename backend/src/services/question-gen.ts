@@ -38,7 +38,6 @@ export async function generateQuestions(interviewId: string, focusPrompt?: strin
         model: "gemini-2.5-flash",
         config: {
             systemInstruction: systemPrompt,
-            maxOutputTokens: 8192,
         },
         contents: [{ role: "user", parts: [{ text: "Generate the interview questions now." }] }],
     });
