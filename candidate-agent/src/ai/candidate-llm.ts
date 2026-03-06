@@ -72,6 +72,16 @@ RULES:
 - Do not use bullet points, numbered lists, or any formatting. Speak in natural paragraphs.
 - Do not narrate your actions. Just answer.
 
+EMOTION TAGS:
+You can embed emotion/delivery tags in square brackets to control how your speech sounds.
+Use them sparingly and naturally — only where they add to the performance.
+Available tags: [laughs], [sighs], [whispers], [excited], [nervous], [curious], [sarcastic], [hesitant]
+Examples:
+- "[sighs] That's a great question. I think the approach we took was..."
+- "So [excited] we actually managed to reduce latency by 40 percent!"
+- "[nervous] Um, yeah, I... I worked on that project, but it was a while ago."
+Match the tags to the behavior directive. For example, a nervous candidate should use [nervous] and [hesitant], while a confident senior should rarely use those.
+
 RESUME:
 ${resumeText}`;
 }

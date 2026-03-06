@@ -4,10 +4,13 @@ let browser: Browser | null = null;
 let context: BrowserContext | null = null;
 let page: Page | null = null;
 
+export function getPage(): Page | null {
+    return page;
+}
+
 /**
  * Joins a Teams meeting via Playwright in a Chromium browser.
- * Injects a custom audio pipeline via Web Audio API so we can
- * play TTS audio directly into the WebRTC mic stream.
+ * Sets up the outbound audio pipeline (TTS → WebRTC) via Web Audio API.
  */
 export async function joinMeeting(
     meetingUrl: string,
@@ -33,19 +36,21 @@ export async function joinMeeting(
 
     page = await context.newPage();
 
-    // Forward browser console to Node.js for debugging
+    // Forward select browser console messages to Node.js
+    const seenMessages = new Set<string>();
     page.on("console", (msg) => {
         const text = msg.text();
-        if (text.startsWith("[candidate-agent]")) {
-            console.log(text);
+        if (!text.startsWith("[candidate-agent]")) return;
+        // Deduplicate one-time messages (addInitScript runs per frame)
+        if (text.includes("pipeline") || text.includes("injected")) {
+            if (seenMessages.has(text)) return;
+            seenMessages.add(text);
         }
+        console.log(text);
     });
 
-    // Inject audio pipeline BEFORE Teams loads.
-    // Overrides getUserMedia so Teams gets our custom audio stream,
-    // and intercepts RTCPeerConnection to ensure our audio track is used.
+    // Inject TTS → WebRTC audio pipeline BEFORE Teams loads.
     await page.addInitScript(() => {
-        // Use 48kHz to match WebRTC's expected sample rate
         const audioCtx = new AudioContext({ sampleRate: 48000 });
         const dest = audioCtx.createMediaStreamDestination();
 
@@ -59,49 +64,41 @@ export async function joinMeeting(
 
         const ourAudioTrack = dest.stream.getAudioTracks()[0];
 
-        // Expose globally
         (window as any).__audioCtx = audioCtx;
         (window as any).__audioDest = dest;
         (window as any).__audioTrack = ourAudioTrack;
 
-        console.log("[candidate-agent] Audio pipeline initialized, track:", ourAudioTrack.id);
+        console.log("[candidate-agent] Audio pipeline ready");
 
-        // Play PCM16 audio into the WebRTC stream. Returns when playback finishes.
+        // Play PCM16 audio into the WebRTC stream
         (window as any).__playAudio = async (base64PCM: string, inputSampleRate: number) => {
-            // Ensure AudioContext is running
             if (audioCtx.state === "suspended") {
                 await audioCtx.resume();
             }
 
-            // Decode base64 to Int16 PCM
             const binary = atob(base64PCM);
             const bytes = new Uint8Array(binary.length);
             for (let i = 0; i < binary.length; i++) {
                 bytes[i] = binary.charCodeAt(i);
             }
-            const evenLen = bytes.length & ~1; // Int16Array needs even byte count
+            const evenLen = bytes.length & ~1;
             const int16 = new Int16Array(bytes.buffer, 0, evenLen / 2);
-
-            // Convert Int16 to Float32
             const float32 = new Float32Array(int16.length);
             for (let i = 0; i < int16.length; i++) {
                 float32[i] = int16[i] / 32768;
             }
 
-            // Create buffer at the input sample rate, AudioContext will resample
             const audioBuffer = audioCtx.createBuffer(1, float32.length, inputSampleRate);
             audioBuffer.copyToChannel(float32, 0);
 
-            console.log(`[candidate-agent] Playing audio: ${float32.length} samples at ${inputSampleRate}Hz (${(float32.length / inputSampleRate).toFixed(1)}s)`);
+            // Minimal logging — only duration
+            console.log(`[candidate-agent] Playing ${(float32.length / inputSampleRate).toFixed(1)}s of audio`);
 
             return new Promise<void>((resolve) => {
                 const source = audioCtx.createBufferSource();
                 source.buffer = audioBuffer;
                 source.connect(dest);
-                source.onended = () => {
-                    console.log("[candidate-agent] Audio playback finished");
-                    resolve();
-                };
+                source.onended = () => resolve();
                 source.start();
             });
         };
@@ -109,27 +106,24 @@ export async function joinMeeting(
         // Override getUserMedia to inject our custom audio track
         const origGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
         navigator.mediaDevices.getUserMedia = async (constraints) => {
-            console.log("[candidate-agent] getUserMedia called:", JSON.stringify(constraints));
             const stream = await origGetUserMedia(constraints);
 
             if (constraints && constraints.audio) {
-                // Replace the fake audio track with ours
                 stream.getAudioTracks().forEach((t) => {
                     stream.removeTrack(t);
                     t.stop();
                 });
                 stream.addTrack(ourAudioTrack);
-                console.log("[candidate-agent] Replaced audio track in getUserMedia stream");
+                console.log("[candidate-agent] Audio track injected");
             }
 
             return stream;
         };
 
-        // Intercept RTCPeerConnection.addTrack to ensure our audio track is used
+        // Intercept RTCPeerConnection.addTrack for outbound audio
         const origAddTrack = RTCPeerConnection.prototype.addTrack;
         RTCPeerConnection.prototype.addTrack = function (track, ...streams) {
             if (track.kind === "audio" && track.id !== ourAudioTrack.id) {
-                console.log("[candidate-agent] RTCPeerConnection.addTrack intercepted — replacing audio track");
                 track.stop();
                 return origAddTrack.call(this, ourAudioTrack, ...streams);
             }
@@ -140,7 +134,6 @@ export async function joinMeeting(
         const origReplaceTrack = RTCRtpSender.prototype.replaceTrack;
         RTCRtpSender.prototype.replaceTrack = function (track) {
             if (track && track.kind === "audio" && track.id !== ourAudioTrack.id) {
-                console.log("[candidate-agent] RTCRtpSender.replaceTrack intercepted — keeping our audio track");
                 return origReplaceTrack.call(this, ourAudioTrack);
             }
             return origReplaceTrack.call(this, track);
@@ -199,8 +192,7 @@ export async function joinMeeting(
 }
 
 /**
- * Plays PCM16 16kHz mono audio into the meeting's mic stream
- * via the injected Web Audio API pipeline.
+ * Plays PCM16 16kHz mono audio into the meeting's mic stream.
  */
 export async function playAudioInMeeting(pcmBuffer: Buffer): Promise<void> {
     if (!page) {
@@ -209,8 +201,6 @@ export async function playAudioInMeeting(pcmBuffer: Buffer): Promise<void> {
     }
 
     const base64 = pcmBuffer.toString("base64");
-    console.log(`[meeting] Sending ${pcmBuffer.length} bytes of audio to browser...`);
-
     await page.evaluate(
         async ({ data, rate }) => {
             await (window as any).__playAudio(data, rate);

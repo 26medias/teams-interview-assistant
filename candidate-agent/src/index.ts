@@ -75,7 +75,6 @@ function parseArgs(): CliConfig {
 
 function validateEnv(): void {
     const required: [string, string][] = [
-        ["DEEPGRAM_API_KEY", "Deepgram API key"],
         ["GEMINI_API_KEY", "Gemini API key"],
     ];
 

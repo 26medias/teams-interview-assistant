@@ -54,11 +54,21 @@ This will allow to run tests.
     - Sign-in
     - Sign-up
 - Dashboard
+    - [Create new interview]
+        - Candidate name
+        - Teams meeting link
+        - Resume upload
+        - "Job description" upload or select previously uploaded from past interviews
+        - "Hiring criteria" upload or select previously uploaded from past interviews
+        - Text input "Interview Stage details" (user enter if it's intro, deep dive, etc and what they're looking for: "I'm looking to validate their experience & knowledge of Agentic AI" for example) or select previously written from past interviews
     - List of interviews
         - Interview Details
             - If upcoming:
                 - [Join meeting]
-                - List of generated questions
+                - [Update meeting link]
+                - List of generated questions (+ option to delete/manual edit/AI edit -> "feedback" -> new version)
+                - [Generate more questions] -> "What type of questions, what should we focus on?"
+                - Candidate summary (name, summary of experience, ...)
             - If in progress:
                 - Candidate summary (name, summary of experience, ...)
                 - Real-time transcripts
@@ -71,13 +81,6 @@ This will allow to run tests.
                 - Rating
                 - Recommended Decision / next steps
                 - Export to markdown file
-    - [Create new interview]
-        - Candidate name
-        - Teams meeting link
-        - Resume upload
-        - "Job description" upload or select previously uploaded from past interviews
-        - "Hiring criteria" upload or select previously uploaded from past interviews
-        - Text input "Interview Stage details" (user enter if it's intro, deep dive, etc and what they're looking for: "I'm looking to validate their experience & knowledge of Agentic AI" for example) or select previously written from past interviews
     
 
 ## Backend
